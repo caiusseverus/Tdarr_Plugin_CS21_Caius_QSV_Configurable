@@ -1,4 +1,3 @@
-/* eslint-disable */
 function details () {
   return {
     id: 'Tdarr_Plugin_CS21_QSV_CONFIGURABLE',
@@ -47,11 +46,11 @@ function details () {
       28`
       },
       {
-        name: 'bframe',
-        tooltip: `Specify amount of b-frames to use, 0-5. Use 0 to disable. (QSV uses b-frames by default)  
+        name: 'pixdepth',
+        tooltip: `Enable 10 bit output.  
       
       \\nExample:\\n
-      3`
+      true, false`
       },
       {
         name: 'ffmpeg_preset',
@@ -101,16 +100,36 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
     response.infoLog += '☒File is not a video! \n'
     return response
   } else {
-    // bitrateprobe = file.ffProbeData.streams[0].bit_rate;
+    //bitrateprobe = file.ffProbeData.streams[0].bit_rate;
     response.infoLog += '☑File is a video! \n'
   }
 
-  //check if the file is already hevc, it will not be transcoded if true and the function will be stopped immediately
-  if (file.ffProbeData.streams[0].codec_name == 'hevc') {
+  //check if 10bit output is configured.
+  var pixdepth
+  if (inputs.pixdepth === undefined) {
+    pixdepth = 'false'
+  } else {
+    pixdepth = `${inputs.pixdepth}`
+    response.infoLog += `☑ 10 bit encoding set to ${pixdepth}\n`
+  }
+
+  if (pixdepth == 'true') {
+    pixdepth_setting = '-vf "vpp_qsv=format=p010le"'
+  } else {
+    pixdepth_setting = '-vf "vpp_qsv=format=same"'
+  }
+
+
+
+  //check if the file is already hevc, it will not be transcoded if true and the function will be stopped immediately. Dolby vision files will not be remuxed to mkv.
+  if (file.ffProbeData.streams[0].codec_name == 'hevc' || file.ffProbeData.streams[0].codec_name == 'dvhe') {
     response.processFile = false
     response.infoLog += '☑File is already in hevc! \n'
     return response
-  }
+  } 
+
+var file_codec
+file_codec = file.ffProbeData.streams[0].codec_name
 
   // Check if preset is configured, default to faster if not
   var ffmpeg_preset
@@ -127,7 +146,8 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
     if (file.ffProbeData.streams[0].profile != 'High 10') {
       //Remove HW Decoding for High 10 Profile
       response.preset = `-hwaccel qsv -c:v h264_qsv`
-    }
+    } else if (file.ffProbeData.streams[0].profile == 'High 10') {
+      response.preset = '-init_hw_device qsv=hw -filter_hw_device hw'}
   } else if (file.video_codec_name == 'mpeg2') {
     response.preset = `-hwaccel qsv -c:v mpeg2_qsv`
   } else if (file.video_codec_name == 'vc1') {
@@ -171,7 +191,7 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
           file.ffProbeData.streams[i].codec_name.toLowerCase() == 'mjpeg') &&
         file.ffProbeData.streams[i].codec_type.toLowerCase() == 'video'
       ) {
-        map = `-map 0:v:0 -map 0:a -map 0:s?`
+        map = `-map 0:v:0 -map 0:a? -map 0:s?`
       }
     } catch (err) {}
   }
@@ -179,7 +199,7 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
   //codec will be checked so it can be transcoded correctly
   if (file.video_resolution === '480p' || file.video_resolution === '576p') {
     cqvinuse = `${inputs.sdCQV}`
-    response.preset += `,${map} -dn -c:v hevc_qsv -preset ${ffmpeg_preset} -global_quality ${inputs.sdCQV} -rdo 1 -b_strategy 1 -bf ${inputs.bframe} -adaptive_b 1 -mbbrc 1 -c:a copy ${subcli}${maxmux}`
+    response.preset += `,${map} -dn -load_plugin hevc_hw -c:v hevc_qsv -preset ${ffmpeg_preset} ${pixdepth_setting} -global_quality ${inputs.sdCQV} -b_strategy 1 -c:a copy ${subcli}${maxmux}`
     transcode = 1
   }
 
@@ -187,21 +207,21 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
   //codec will be checked so it can be transcoded correctly
   if (file.video_resolution === '720p') {
     cqvinuse = `${inputs.hdCQV}`
-    response.preset += `,${map} -dn -c:v hevc_qsv -preset ${ffmpeg_preset} -global_quality ${inputs.hdCQV} -rdo 1 -b_strategy 1 -bf ${inputs.bframe} -adaptive_b 1 -mbbrc 1 -c:a copy ${subcli}${maxmux}`
+    response.preset += `,${map} -dn -load_plugin hevc_hw -c:v hevc_qsv -preset ${ffmpeg_preset} ${pixdepth_setting} -global_quality ${inputs.hdCQV} -b_strategy 1 -c:a copy ${subcli}${maxmux}`
     transcode = 1
   }
   //file will be encoded if the resolution is 1080p
   //codec will be checked so it can be transcoded correctly
   if (file.video_resolution === '1080p') {
     cqvinuse = `${inputs.fullhdCQV}`
-    response.preset += `,${map} -dn -c:v hevc_qsv -preset ${ffmpeg_preset} -global_quality ${inputs.fullhdCQV} -rdo 1 -b_strategy 1 -bf ${inputs.bframe} -adaptive_b 1 -mbbrc 1 -c:a copy ${subcli}${maxmux}`
+    response.preset += `,${map} -dn -load_plugin hevc_hw -c:v hevc_qsv -preset ${ffmpeg_preset} ${pixdepth_setting} -global_quality ${inputs.fullhdCQV} -b_strategy 1 -c:a copy ${subcli}${maxmux}`
     transcode = 1
   }
   //file will be encoded if the resolution is 4K
   //codec will be checked so it can be transcoded correctly
   if (file.video_resolution === '4KUHD') {
     cqvinuse = `${inputs.uhdCQV}`
-    response.preset += `,${map} -dn -c:v hevc_qsv -preset ${ffmpeg_preset} -global_quality ${inputs.uhdCQV} -rdo 1 -b_strategy 1 -bf ${inputs.bframe} -adaptive_b 1 -mbbrc 1 -c:a copy ${subcli}${maxmux}`
+    response.preset += `,${map} -dn -load_plugin hevc_hw -c:v hevc_qsv -preset ${ffmpeg_preset} ${pixdepth_setting} -global_quality ${inputs.uhdCQV} -b_strategy 1 -c:a copy ${subcli}${maxmux}`
     transcode = 1
   }
   //check if the file is eligible for transcoding
@@ -211,8 +231,7 @@ module.exports.plugin = function plugin (file, librarySettings, inputs) {
     response.FFmpegMode = true
     response.reQueueAfter = true
     response.infoLog += `☑File is ${file.video_resolution}, using quality value of ${cqvinuse}!\n`
-    response.infoLog += `☒File is not hevc!\n`
-    response.infoLog += `File is being transcoded!\n`
+    response.infoLog += `☒File is ${file_codec}. Transcoding to hevc!\n`
   }
 
   return response
