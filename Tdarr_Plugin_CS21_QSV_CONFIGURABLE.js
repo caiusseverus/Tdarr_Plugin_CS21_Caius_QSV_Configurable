@@ -1,6 +1,6 @@
 function details () {
   return {
-    id: 'Tdarr_Plugin_CS21_QSV_CONFIGURABLE',
+    id: 'Tdarr_Plugin_CS21_Caius_QSV_Configurable',
     Stage: 'Pre-processing',
     Name: 'Tiered QSV CONFIGURABLE',
     Type: 'Video',
